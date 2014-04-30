@@ -40,7 +40,13 @@ module.exports = function(grunt) {
       amd: false,
       commonjs: false,
       knownHelpers: [],
-      knownHelpersOnly: false
+      knownHelpersOnly: false,
+      amdOptions :{
+        deps: {
+          'Handlebars' : "handlebars"
+        },
+        exports: "JST"
+      }
     });
 
     // assign regex for partials directory detection
@@ -57,7 +63,7 @@ module.exports = function(grunt) {
     var useNamespace = options.namespace !== false;
 
     var namespaceInfo = _.memoize(function(filepath) {
-      if (!useNamespace) {return undefined;}
+      if (!useNamespace || options.amd) {return undefined;}
       if (_.isFunction(options.namespace)) {
         return helpers.getNamespaceDeclaration(options.namespace(filepath));
       } else {
@@ -117,11 +123,15 @@ module.exports = function(grunt) {
             partials.push('Handlebars.registerPartial('+JSON.stringify(filename)+', '+compiled+');');
           }
         } else {
-          if(options.amd && !useNamespace) {
-            compiled = 'return ' + compiled;
-          }
           filename = processName(filepath);
-          if (useNamespace) {
+          if(options.amd) {
+              if(useNamespace){
+                  templates.push(options.amdOptions.exports + '['+JSON.stringify(filename)+'] =' + compiled);
+              }else{
+                  templates.push(options.amdOptions.exports + ' = ' + compiled);
+              }
+
+          }else if (useNamespace) {
             templates.push(nsInfo.namespace+'['+JSON.stringify(filename)+'] = '+compiled+';');
           } else if (options.commonjs === true) {
             templates.push('templates['+JSON.stringify(filename)+'] = '+compiled+';');
@@ -152,14 +162,11 @@ module.exports = function(grunt) {
         }
 
         if (options.amd) {
-          // Wrap the file in an AMD define fn.
-          output.unshift("define(['handlebars'], function(Handlebars) {");
-          if (useNamespace) {
-            // Namespace has not been explicitly set to false; the AMD
-            // wrapper will return the object containing the template.
-            output.push("return "+nsInfo.namespace+";");
-          }
-          output.push("});");
+          var wrapfor = require('wrapfor');
+          output.unshift('var ' + options.amdOptions.exports + '= {};');
+          output.push(';');
+          output = wrapfor.amd(output.join(grunt.util.normalizelf(options.separator)),options.amdOptions);
+
         }
 
         if (options.commonjs) {
@@ -174,7 +181,12 @@ module.exports = function(grunt) {
           output.push("};");
         }
 
-        grunt.file.write(f.dest, output.join(grunt.util.normalizelf(options.separator)));
+        if(options.amd){
+            grunt.file.write(f.dest, output);
+        }else{
+            grunt.file.write(f.dest, output.join(grunt.util.normalizelf(options.separator)));
+        }
+
         grunt.log.writeln('File ' + chalk.cyan(f.dest) + ' created.');
       }
     });
